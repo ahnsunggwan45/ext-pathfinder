@@ -1,9 +1,11 @@
 #ifndef PATHFINDER_PATHCACHE_H
 #define PATHFINDER_PATHCACHE_H
 
+#include <cstddef>
 #include <cstdint>
 #include <list>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace pathfinder {
@@ -64,7 +66,7 @@ public:
     bool get(const PathKey &key, uint64_t currentGen, Entry &out) {
         const auto it = index_.find(key);
         if (it == index_.end()) return false;
-        if (it->second->generation != currentGen) {
+        if (it->second->entry.generation != currentGen) {
             // Stale — drop it lazily so we don't waste CPU on eager invalidation.
             lru_.erase(it->second);
             index_.erase(it);
@@ -72,7 +74,7 @@ public:
         }
         // Promote to MRU.
         lru_.splice(lru_.begin(), lru_, it->second);
-        out = *it->second;
+        out = it->second->entry;
         return true;
     }
 
@@ -80,9 +82,9 @@ public:
     void put(const PathKey &key, std::vector<int32_t> path, bool found, uint64_t currentGen) {
         const auto it = index_.find(key);
         if (it != index_.end()) {
-            it->second->path       = std::move(path);
-            it->second->found      = found;
-            it->second->generation = currentGen;
+            it->second->entry.path       = std::move(path);
+            it->second->entry.found      = found;
+            it->second->entry.generation = currentGen;
             lru_.splice(lru_.begin(), lru_, it->second);
             return;
         }

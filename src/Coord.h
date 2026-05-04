@@ -1,6 +1,7 @@
 #ifndef PATHFINDER_COORD_H
 #define PATHFINDER_COORD_H
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 

@@ -1,6 +1,7 @@
 #ifndef PATHFINDER_BLOCKTABLE_H
 #define PATHFINDER_BLOCKTABLE_H
 
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
 

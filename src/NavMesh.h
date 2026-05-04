@@ -5,6 +5,7 @@
 #include "Coord.h"
 #include "SubChunk.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>

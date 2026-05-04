@@ -4,6 +4,7 @@
 #include "Coord.h"
 #include "NavMesh.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
