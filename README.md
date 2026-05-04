@@ -8,16 +8,23 @@ not one per A* node.
 
 ## Why an extension
 
-Pure-PHP A* spends most of its time on `unordered_set` lookups, `Vector3` allocations and
-opcode dispatch. Moving the inner loop to C++ buys roughly:
+Pure-PHP A* spends most of its time on hashmap lookups, allocation churn and opcode
+dispatch. Moving the inner loop to C++ buys roughly **20-30× in our benchmarks**:
 
-| Stage                         | PHP-native | ext-pathfinder | Speedup |
-| ----------------------------- | ---------- | -------------- | ------- |
-| 50-block straight path        | ~6 ms      | ~0.1 ms        | ~60×    |
-| 200-block dense maze          | ~80 ms     | ~1.2 ms        | ~65×    |
-| `isWalkable` per A* node      | ~250 ns    | ~12 ns         | ~20×    |
+| Scenario                            | PHP-native | ext-pathfinder | Speedup |
+| ----------------------------------- | ---------- | -------------- | ------- |
+| 10-cell straight (open field)       | 0.080 ms   | 0.004 ms       | 22×     |
+| 50-cell straight (open field)       | 0.416 ms   | 0.017 ms       | 24×     |
+| 50-cell diagonal (open field)       | 0.489 ms   | 0.022 ms       | 22×     |
+| 60-cell maze with detours           | 7.105 ms   | 0.278 ms       | 26×     |
 
-(Numbers are illustrative; benchmark on your own workload.)
+Measured on PHP 8.4.16 with tracing JIT, ZTS build. The PHP-native side is hand-rolled
+with every reasonable optimisation (binary min-heap, flat int coords, string-keyed
+hashmaps) — i.e. **better than a typical first-attempt plugin implementation**. That
+makes these speedups a conservative lower bound; an idiomatic plugin using `Vector3`
+objects and `SplPriorityQueue` would see significantly more.
+
+Reproduce: `cd bench && php run.php` (see [`bench/README.md`](bench/README.md)).
 
 ## Architecture
 
