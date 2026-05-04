@@ -1,0 +1,14 @@
+// vim:ft=javascript
+
+ARG_ENABLE("pathfinder", "Enable PocketMine Pathfinder extension", "no");
+
+if (PHP_PATHFINDER != "no") {
+    AC_DEFINE("ZEND_ENABLE_STATIC_TSRMLS_CACHE", 1, "ZTS static cache");
+    ADD_FLAG("CFLAGS_PATHFINDER", "/std:c++17 /EHsc /O2 /Zc:__cplusplus /DNDEBUG");
+    ADD_FLAG("CXXFLAGS_PATHFINDER", "/std:c++17 /EHsc /O2 /Zc:__cplusplus /DNDEBUG");
+
+    EXTENSION("pathfinder", "pathfinder.cpp", null, "/I" + configure_module_dirname);
+    ADD_SOURCES(configure_module_dirname + "/src",
+        "NavMesh.cpp AStarSolver.cpp",
+        "pathfinder");
+}

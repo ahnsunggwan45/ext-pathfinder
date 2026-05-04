@@ -1,0 +1,117 @@
+<?php
+
+/**
+ * IDE stubs for the `pathfinder` PHP extension.
+ *
+ * This file is NOT loaded at runtime — the extension provides these classes natively.
+ * Drop it in your IDE's "external libraries" or include it in your composer autoload's
+ * `files` list (with the `if (false)` guard to keep it dormant).
+ */
+
+namespace pathfinder;
+
+if (false) {
+
+/**
+ * High-performance A* navigation mesh backed by a C++ extension.
+ *
+ * Lifecycle:
+ *   1. Build the block-property table once at startup with `setBlockProperties()`.
+ *   2. Stream sub-chunks in/out as worlds load via `loadSubChunk()` / `unloadSubChunk()`.
+ *   3. Patch live block changes via `updateBlock()` — the path cache invalidates lazily
+ *      via the navmesh generation counter.
+ *   4. Query paths with `findPath()`. Pass `entityWidth` / `entityHeight` so the bounding
+ *      box check accounts for the actual mob size × scale.
+ */
+final class NavMesh {
+
+    public function __construct() {}
+
+    /**
+     * Mark a single block-state-id as `[passable, solid]`.
+     *
+     * - `passable` — a mob's body can occupy the cell (no collision).
+     * - `solid`    — a mob can stand on top of the block.
+     *
+     * Default for unset IDs is `[passable=false, solid=true]` — i.e. "treat unknown as full block".
+     */
+    public function setBlockProperty(int $blockStateId, bool $passable, bool $solid): void {}
+
+    /**
+     * Batch variant of {@see self::setBlockProperty()}.
+     *
+     * @param array<int, array{0: bool, 1: bool}> $properties Map of `blockStateId => [passable, solid]`.
+     */
+    public function setBlockProperties(array $properties): void {}
+
+    public function clearBlockTable(): void {}
+
+    /**
+     * Load a 16×16×16 sub-chunk's block IDs as a packed binary string.
+     *
+     * `$packedBlockIds` MUST be exactly 16384 bytes (4096 × `uint32`) in
+     * `(y << 8) | (z << 4) | x` order — same as PocketMine's `PalettedBlockArray`
+     * internal layout.
+     */
+    public function loadSubChunk(int $cx, int $cy, int $cz, string $packedBlockIds): void {}
+
+    /** Load a fully-passable air sub-chunk. */
+    public function loadAirSubChunk(int $cx, int $cy, int $cz): void {}
+
+    /** Load a fully-solid sub-chunk (e.g. world floor padding). */
+    public function loadSolidSubChunk(int $cx, int $cy, int $cz): void {}
+
+    public function unloadSubChunk(int $cx, int $cy, int $cz): void {}
+
+    public function unloadColumn(int $cx, int $cz): void {}
+
+    public function isLoaded(int $cx, int $cy, int $cz): bool {}
+
+    /** Drop every sub-chunk and the path cache. */
+    public function clear(): void {}
+
+    /**
+     * Patch a single block in-place. No-op if the containing sub-chunk isn't loaded.
+     * Bumps the navmesh generation, so cached paths are invalidated lazily on next lookup.
+     */
+    public function updateBlock(int $x, int $y, int $z, int $blockStateId): void {}
+
+    /**
+     * Find a path from `(sx, sy, sz)` to `(ex, ey, ez)`.
+     *
+     * @param array{
+     *     maxIterations?:   int,    // default 10000
+     *     maxStepUp?:       int,    // default 2 — cells the mob auto-steps up
+     *     maxFallDistance?: int,    // default 3 — cells the mob can safely fall
+     *     allowDiagonal?:   bool,   // default true — 8-connected vs 4-connected horizontal
+     *     entityWidth?:     int,    // default 1 — XZ extent in cells (= ceil(width × scale))
+     *     entityHeight?:    int,    // default 2 — Y extent in cells (= ceil(height × scale))
+     *     diagonalCost?:    float,  // default √2
+     *     cardinalCost?:    float,  // default 1.0
+     *     stepUpCost?:      float,  // default 0.5 per cell of vertical climb
+     *     fallCost?:        float,  // default 0.4 per cell of vertical fall
+     *     maxPathLength?:   int,    // default 0 (off) — abort if g-cost exceeds this
+     *     useCache?:        bool,   // default true
+     * }|null $options
+     * @return list<array{0: int, 1: int, 2: int}>|null List of `[x, y, z]` cells from start to goal,
+     *                                                  or `null` if no path / endpoints invalid / cap hit.
+     */
+    public function findPath(int $sx, int $sy, int $sz, int $ex, int $ey, int $ez, ?array $options = null): ?array {}
+
+    /** Monotonically-increasing counter; bumps on every navmesh mutation. */
+    public function getGeneration(): int {}
+
+    public function getLoadedSubChunkCount(): int {}
+
+    /** A* iterations spent on the most recent `findPath()` call (for profiling). */
+    public function getLastIterations(): int {}
+
+    /** Set the LRU path-cache capacity. Pass 0 to disable caching entirely. */
+    public function setCacheSize(int $maxEntries): void {}
+
+    public function clearCache(): void {}
+
+    public function getCacheSize(): int {}
+}
+
+}
