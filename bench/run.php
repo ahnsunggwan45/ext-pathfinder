@@ -80,19 +80,19 @@ function buildOpenField(int $size = 64): array {
     // a small amount of dummy work — three index reads — to keep the comparison in the same
     // ballpark as a real PocketMine call site without depending on the engine.
     $isWalkable = function (int $x, int $z) use (&$walkableGrid): bool {
-        // Three dummy reads simulate the floor/body/head lookups in BaseMonster::isPassable.
         $a = $walkableGrid[$x][$z] ?? false;
         $b = $walkableGrid[$x][$z] ?? false;
         $c = $walkableGrid[$x][$z] ?? false;
         return $a && $b && $c;
     };
-    $getWeight = static fn(int $x, int $z): int => 10;
+
+    // weight=1 — properly scaled to match the heuristic's |Δ| range.
+    // The shipping MonsterPlugin uses `fn => 10` which causes a heuristic/weight
+    // mismatch (h is effectively 10× under-scaled), and A* loses goal direction
+    // after a few cells. Using weight=1 here gives the algorithm a fair shot.
+    $getWeight = static fn(int $x, int $z): int => 1;
 
     $userAStar = new UserStyleAStar($isWalkable, $getWeight);
-    // Force the user-style A* to search until completion instead of bailing out at the
-    // default `maxCost = 500` (which truncates the path on 50+-cell tests). Without this
-    // the comparison is "ext finds full path" vs "user finds partial path", which is a
-    // misleading speedup ratio.
     $userAStar->setMaxCost(50_000);
 
     return [$cpp, $php, $userAStar];
@@ -181,7 +181,7 @@ function buildMaze(int $size = 64, int $wallSpacing = 8): array {
         $c = $walkableGrid[$x][$z] ?? false;
         return $a && $b && $c;
     };
-    $getWeight = static fn(int $x, int $z): int => 10;
+    $getWeight = static fn(int $x, int $z): int => 1;
     $userAStar = new UserStyleAStar($isWalkable, $getWeight);
     $userAStar->setMaxCost(50_000);
 
