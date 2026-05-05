@@ -20,8 +20,11 @@ declare(strict_types=1);
  */
 
 require __DIR__ . '/PhpAStar.php';
+require __DIR__ . '/UserStyleAStar.php';
 
 use pathfinder\bench\PhpNavMesh;
+use pathfinder\bench\UserStyleAStar;
+use pocketmine\math\Vector3;
 
 if (!class_exists('\\pathfinder\\NavMesh')) {
     fwrite(STDERR, "ext-pathfinder is not loaded. Run with the PHP binary that has the extension built in.\n");
@@ -53,6 +56,9 @@ function buildOpenField(int $size = 64): array {
     $php->setBlockProperty(0, true, false);
     $php->setBlockProperty(1, false, true);
 
+    // 2-D walkability grid for the user-style A* (it asks `isWalkable($x, $z)` only).
+    $walkableGrid = [];
+
     $chunks = (int) ceil($size / 16);
     for ($cx = 0; $cx < $chunks; $cx++) {
         for ($cz = 0; $cz < $chunks; $cz++) {
@@ -65,14 +71,38 @@ function buildOpenField(int $size = 64): array {
         for ($z = 0; $z < $size; $z++) {
             $cpp->updateBlock($x, 15, $z, 0);
             $php->updateBlock($x, 15, $z, 0);
+            $walkableGrid[$x][$z] = true;
         }
     }
 
-    return [$cpp, $php];
+    // Build the user-style A* with closures that hit the same grid as the other impls.
+    // We approximate the cost of `BaseMonster::isPassable()` (4× World::getBlockAt) by doing
+    // a small amount of dummy work — three index reads — to keep the comparison in the same
+    // ballpark as a real PocketMine call site without depending on the engine.
+    $isWalkable = function (int $x, int $z) use (&$walkableGrid): bool {
+        // Three dummy reads simulate the floor/body/head lookups in BaseMonster::isPassable.
+        $a = $walkableGrid[$x][$z] ?? false;
+        $b = $walkableGrid[$x][$z] ?? false;
+        $c = $walkableGrid[$x][$z] ?? false;
+        return $a && $b && $c;
+    };
+    $getWeight = static fn(int $x, int $z): int => 10;
+
+    $userAStar = new UserStyleAStar($isWalkable, $getWeight);
+
+    return [$cpp, $php, $userAStar];
 }
 
 function buildMaze(int $size = 64, int $wallSpacing = 8): array {
-    [$cpp, $php] = buildOpenField($size);
+    [$cpp, $php, $userAStarOld] = buildOpenField($size);
+    unset($userAStarOld); // we rebuild below with maze-aware grid
+
+    $walkableGrid = [];
+    for ($x = 0; $x < $size; $x++) {
+        for ($z = 0; $z < $size; $z++) {
+            $walkableGrid[$x][$z] = true;
+        }
+    }
 
     $rng = new \Random\Randomizer(new \Random\Engine\Mt19937(42));
     for ($wallX = $wallSpacing; $wallX < $size; $wallX += $wallSpacing) {
@@ -81,9 +111,20 @@ function buildMaze(int $size = 64, int $wallSpacing = 8): array {
             if ($z === $passageZ || $z === $passageZ + 1) continue;
             $cpp->updateBlock($wallX, 15, $z, 1);
             $php->updateBlock($wallX, 15, $z, 1);
+            $walkableGrid[$wallX][$z] = false;
         }
     }
-    return [$cpp, $php];
+
+    $isWalkable = function (int $x, int $z) use (&$walkableGrid): bool {
+        $a = $walkableGrid[$x][$z] ?? false;
+        $b = $walkableGrid[$x][$z] ?? false;
+        $c = $walkableGrid[$x][$z] ?? false;
+        return $a && $b && $c;
+    };
+    $getWeight = static fn(int $x, int $z): int => 10;
+    $userAStar = new UserStyleAStar($isWalkable, $getWeight);
+
+    return [$cpp, $php, $userAStar];
 }
 
 // ============================================================================
@@ -132,38 +173,46 @@ function fmt(array $s): string {
         $s['mean'], $s['median'], $s['p95'], $s['min'], $s['iterations'], $s['batches']);
 }
 
-function runScenario(string $name, $cpp, $php, array $args, int $cppIter, int $phpIter): void {
+function runScenario(string $name, $cpp, $php, $userAStar, array $args, array $userArgs, int $cppIter, int $phpIter, int $userIter): void {
     echo "── $name\n";
 
-    // Build per-algorithm option arrays.
+    // Build per-algorithm option arrays for ext-pathfinder.
     $argsA = $args;
     $argsJ = $args;
     $argsA[6] = ($args[6] ?? []) + ['algorithm' => 'astar'];
     $argsJ[6] = ($args[6] ?? []) + ['algorithm' => 'jps'];
 
-    // Sanity: all three should produce paths (length may differ slightly between A*/JPS).
+    // Sanity check: produce paths from all four impls.
     $aPath = $cpp->findPath(...$argsA);
     $jPath = $cpp->findPath(...$argsJ);
     $pPath = $php->findPath(...$args);
+    $userAStar->setGoal($userArgs[1]);
+    $uPath = $userAStar->calculate($userArgs[0]);
     $aLen  = $aPath !== null ? count($aPath) : -1;
     $jLen  = $jPath !== null ? count($jPath) : -1;
     $pLen  = $pPath !== null ? count($pPath) : -1;
+    $uLen  = $uPath !== null ? count($uPath) : -1;
 
-    echo "  path length    : a*={$aLen}, jps={$jLen}(jump-points), php={$pLen}\n";
+    echo "  path length    : a*={$aLen}, jps={$jLen}(jp), php={$pLen}, user={$uLen}\n";
 
     $aStats = benchBatched(fn() => $cpp->findPath(...$argsA), $cppIter);
     $jStats = benchBatched(fn() => $cpp->findPath(...$argsJ), $cppIter);
     $pStats = benchBatched(fn() => $php->findPath(...$args),  $phpIter, batchSize: 10);
+    $uStats = benchBatched(function () use ($userAStar, $userArgs) {
+        $userAStar->setGoal($userArgs[1]);
+        $userAStar->calculate($userArgs[0]);
+    }, $userIter, batchSize: 5);
 
-    $vsAStar = $pStats['mean'] / max($aStats['mean'], 1e-9);
-    $vsJps   = $pStats['mean'] / max($jStats['mean'], 1e-9);
-    $aVsJ    = $aStats['mean'] / max($jStats['mean'], 1e-9);
+    $vsAStar    = $pStats['mean'] / max($aStats['mean'], 1e-9);
+    $vsJps      = $pStats['mean'] / max($jStats['mean'], 1e-9);
+    $userVsExt  = $uStats['mean'] / max($aStats['mean'], 1e-9);
 
-    echo "  PHP-native     : " . fmt($pStats) . "\n";
+    echo "  user A* (cur)  : " . fmt($uStats) . "\n";
+    echo "  PHP-native ref : " . fmt($pStats) . "\n";
     echo "  ext A*         : " . fmt($aStats) . "\n";
     echo "  ext JPS        : " . fmt($jStats) . "\n";
-    printf("  speedup        : %.1f× (php→A*),  %.1f× (php→JPS),  %.2f× (A*→JPS)\n\n",
-           $vsAStar, $vsJps, $aVsJ);
+    printf("  speedup        : ref→A*=%.1f×,  ref→JPS=%.1f×,  user→ext A*=%.1f×\n\n",
+           $vsAStar, $vsJps, $userVsExt);
 }
 
 // ============================================================================
@@ -179,41 +228,49 @@ echo " multiplier     : ×$multiplier\n";
 echo " hostname       : " . gethostname() . "\n";
 echo "\n";
 
-[$cpp, $php] = buildOpenField(64);
+[$cpp, $php, $userAStar] = buildOpenField(64);
 $opts = ['entityHeight' => 1, 'useCache' => false];
 
 runScenario(
     "Test 1 / 10-cell short hop (open field)",
-    $cpp, $php,
+    $cpp, $php, $userAStar,
     [5, 15, 5, 15, 15, 5, $opts],
-    cppIter: (int) (10000 * $multiplier),
-    phpIter: (int) (1000  * $multiplier),
+    [new Vector3(5, 15, 5), new Vector3(15, 15, 5)],
+    cppIter:  (int) (10000 * $multiplier),
+    phpIter:  (int) (1000  * $multiplier),
+    userIter: (int) (1000  * $multiplier),
 );
 
 runScenario(
     "Test 2 / 50-cell straight (open field)",
-    $cpp, $php,
+    $cpp, $php, $userAStar,
     [5, 15, 5, 55, 15, 5, $opts],
-    cppIter: (int) (5000 * $multiplier),
-    phpIter: (int) (500  * $multiplier),
+    [new Vector3(5, 15, 5), new Vector3(55, 15, 5)],
+    cppIter:  (int) (5000 * $multiplier),
+    phpIter:  (int) (500  * $multiplier),
+    userIter: (int) (500  * $multiplier),
 );
 
 runScenario(
     "Test 3 / 50-cell diagonal (open field)",
-    $cpp, $php,
+    $cpp, $php, $userAStar,
     [5, 15, 5, 55, 15, 55, $opts],
-    cppIter: (int) (5000 * $multiplier),
-    phpIter: (int) (300  * $multiplier),
+    [new Vector3(5, 15, 5), new Vector3(55, 15, 55)],
+    cppIter:  (int) (5000 * $multiplier),
+    phpIter:  (int) (300  * $multiplier),
+    userIter: (int) (300  * $multiplier),
 );
 
-[$cpp, $php] = buildMaze(64, 8);
+[$cpp, $php, $userAStar] = buildMaze(64, 8);
 
 runScenario(
     "Test 4 / Maze 60-cell with detours",
-    $cpp, $php,
+    $cpp, $php, $userAStar,
     [2, 15, 2, 60, 15, 60, $opts],
-    cppIter: (int) (2000 * $multiplier),
-    phpIter: (int) (100  * $multiplier),
+    [new Vector3(2, 15, 2), new Vector3(60, 15, 60)],
+    cppIter:  (int) (2000 * $multiplier),
+    phpIter:  (int) (100  * $multiplier),
+    userIter: (int) (100  * $multiplier),
 );
 
 echo "Done.\n";
