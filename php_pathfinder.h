@@ -14,7 +14,7 @@ extern "C" {
 extern zend_module_entry pathfinder_module_entry;
 #define phpext_pathfinder_ptr &pathfinder_module_entry
 
-#define PHP_PATHFINDER_VERSION  "0.2.3"
+#define PHP_PATHFINDER_VERSION  "0.2.4"
 #define PHP_PATHFINDER_EXTNAME  "pathfinder"
 
 #if defined(ZTS) && defined(COMPILE_DL_PATHFINDER)

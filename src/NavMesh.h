@@ -5,6 +5,8 @@
 #include "Coord.h"
 #include "SubChunk.h"
 
+#include <climits>  // INT32_MIN
+#include <cmath>    // std::sqrt, std::floor (used by isLineWalkable)
 #include <cstddef>
 #include <cstdint>
 #include <memory>
