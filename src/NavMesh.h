@@ -4,11 +4,11 @@
 #include "BlockTable.h"
 #include "Coord.h"
 #include "SubChunk.h"
-#include "vendor/unordered_dense.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 
 namespace pathfinder {
 
@@ -179,7 +179,7 @@ private:
     static constexpr uint64_t kInvalidKey = ~uint64_t(0);
 
     BlockTable blockTable_;
-    ankerl::unordered_dense::map<uint64_t, std::unique_ptr<SubChunk>, PackedCoordHash> subChunks_;
+    std::unordered_map<uint64_t, std::unique_ptr<SubChunk>, PackedCoordHash> subChunks_;
 
     // 1-entry single-slot cache for the most recently accessed subchunk.
     // `mutable` so const queries can refresh it.

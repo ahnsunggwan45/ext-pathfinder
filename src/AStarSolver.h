@@ -3,10 +3,10 @@
 
 #include "Coord.h"
 #include "NavMesh.h"
-#include "vendor/unordered_dense.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace pathfinder {
@@ -107,10 +107,10 @@ private:
 
     // ----- State (reused across queries) ---------------------------------------------------
 
-    std::vector<Node>                                                  nodes_;
-    QuaternaryHeap                                                     open_;
-    ankerl::unordered_dense::map<uint64_t, uint32_t, PackedCoordHash> coordToNode_;
-    std::vector<uint32_t>                                              reconstructionBuf_;
+    std::vector<Node>                                       nodes_;
+    QuaternaryHeap                                          open_;
+    std::unordered_map<uint64_t, uint32_t, PackedCoordHash> coordToNode_;
+    std::vector<uint32_t>                                   reconstructionBuf_;
 
     int32_t lastIterations_   = 0;
     bool    lastReachedGoal_  = false;
