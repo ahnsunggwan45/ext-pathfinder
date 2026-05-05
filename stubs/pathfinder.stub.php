@@ -99,6 +99,20 @@ final class NavMesh {
 
     public function isLoaded(int $cx, int $cy, int $cz): bool {}
 
+    /**
+     * True iff every grid cell the segment from `(x1, y1, z1)` to `(x2, y2, z2)` passes
+     * through can fit a `width × height × width` entity bounding box.
+     *
+     * Used by path smoothing to merge collinear A* waypoints — the check naturally breaks
+     * at jump-up / fall transitions because the line passes through cells that aren't
+     * standable mid-Y, so smoothed paths keep their discrete jump points.
+     */
+    public function isLineWalkable(
+        int $x1, int $y1, int $z1,
+        int $x2, int $y2, int $z2,
+        int $width, int $height,
+    ): bool {}
+
     /** Drop every sub-chunk and the path cache. */
     public function clear(): void {}
 

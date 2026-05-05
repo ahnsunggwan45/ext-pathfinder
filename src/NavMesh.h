@@ -137,6 +137,43 @@ public:
         return true;
     }
 
+    /// True iff the entity can walk in a straight line from (x1, y1, z1) to (x2, y2, z2)
+    /// — every grid cell the segment passes through is `fitsBox`-able for the entity.
+    ///
+    /// Used by path smoothing to merge collinear waypoints. The check naturally breaks
+    /// at jump-up / fall transitions because the line passes through cells that aren't
+    /// standable mid-Y, so smoothed paths preserve discrete jump points.
+    ///
+    /// Sampling: 2 samples per block of distance (cell-rounded). Empirically catches
+    /// every cell the segment touches without expensive 3-D Bresenham.
+    [[gnu::always_inline]] inline bool isLineWalkable(
+        int32_t x1, int32_t y1, int32_t z1,
+        int32_t x2, int32_t y2, int32_t z2,
+        int32_t width, int32_t height) const noexcept
+    {
+        const float dx = static_cast<float>(x2 - x1);
+        const float dy = static_cast<float>(y2 - y1);
+        const float dz = static_cast<float>(z2 - z1);
+        const float distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq < 0.25f) return fitsBox(x1, y1, z1, width, height);
+
+        const float dist = std::sqrt(distSq);
+        const int   steps = static_cast<int>(dist * 2.0f) + 1; // 2 samples / block, min 1
+        const float invSteps = 1.0f / static_cast<float>(steps);
+
+        int32_t lastX = INT32_MIN, lastY = INT32_MIN, lastZ = INT32_MIN;
+        for (int i = 0; i <= steps; ++i) {
+            const float t = static_cast<float>(i) * invSteps;
+            const int32_t x = static_cast<int32_t>(std::floor(static_cast<float>(x1) + dx * t + 0.5f));
+            const int32_t y = static_cast<int32_t>(std::floor(static_cast<float>(y1) + dy * t + 0.5f));
+            const int32_t z = static_cast<int32_t>(std::floor(static_cast<float>(z1) + dz * t + 0.5f));
+            if (x == lastX && y == lastY && z == lastZ) continue;
+            if (!fitsBox(x, y, z, width, height)) return false;
+            lastX = x; lastY = y; lastZ = z;
+        }
+        return true;
+    }
+
     /// Find the best Y in `[baseY - maxFall, baseY + maxStepUp]` at which the entity
     /// bbox fits at (nx, ?, nz). Returns INT32_MIN if no Y in the range works.
     ///

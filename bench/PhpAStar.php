@@ -168,12 +168,27 @@ final class PhpNavMesh {
                 $nx = $cx + $dx;
                 $nz = $cz + $dz;
 
-                // Resolve landing Y considering step-up / fall.
+                // Resolve landing Y. Flat-first ordering (matches ext-pathfinder ≥0.2.2):
+                //   dy=0 → up (1, 2, …) → down (-1, -2, …)
+                // The vast majority of steps in any path are flat — checking dy=0 first
+                // short-circuits in 1 fitsAt call instead of `maxStepUp + 1`.
                 $ny = null;
-                for ($dy = $maxStepUp; $dy >= -$maxFall; $dy--) {
-                    if ($this->fitsAt($nx, $cy + $dy, $nz, $w, $h)) {
-                        $ny = $cy + $dy;
-                        break;
+                if ($this->fitsAt($nx, $cy, $nz, $w, $h)) {
+                    $ny = $cy;
+                } else {
+                    for ($dy = 1; $dy <= $maxStepUp; $dy++) {
+                        if ($this->fitsAt($nx, $cy + $dy, $nz, $w, $h)) {
+                            $ny = $cy + $dy;
+                            break;
+                        }
+                    }
+                    if ($ny === null) {
+                        for ($dy = -1; $dy >= -$maxFall; $dy--) {
+                            if ($this->fitsAt($nx, $cy + $dy, $nz, $w, $h)) {
+                                $ny = $cy + $dy;
+                                break;
+                            }
+                        }
                     }
                 }
                 if ($ny === null) continue;

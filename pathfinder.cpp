@@ -127,6 +127,17 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_navmesh_updateBlock, 0, 0, 4)
     ZEND_ARG_TYPE_INFO(0, blockStateId, IS_LONG, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_navmesh_isLineWalkable, 0, 0, 6)
+    ZEND_ARG_TYPE_INFO(0, x1,     IS_LONG, 0)
+    ZEND_ARG_TYPE_INFO(0, y1,     IS_LONG, 0)
+    ZEND_ARG_TYPE_INFO(0, z1,     IS_LONG, 0)
+    ZEND_ARG_TYPE_INFO(0, x2,     IS_LONG, 0)
+    ZEND_ARG_TYPE_INFO(0, y2,     IS_LONG, 0)
+    ZEND_ARG_TYPE_INFO(0, z2,     IS_LONG, 0)
+    ZEND_ARG_TYPE_INFO(0, width,  IS_LONG, 0)
+    ZEND_ARG_TYPE_INFO(0, height, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_navmesh_findPath, 0, 0, 6)
     ZEND_ARG_TYPE_INFO(0, sx, IS_LONG, 0)
     ZEND_ARG_TYPE_INFO(0, sy, IS_LONG, 0)
@@ -360,6 +371,26 @@ static inline void emit_path_array(zval *return_value, const std::vector<int32_t
     }
 }
 
+PHP_METHOD(NavMesh, isLineWalkable) {
+    zend_long x1, y1, z1, x2, y2, z2, w, h;
+
+    ZEND_PARSE_PARAMETERS_START(8, 8)
+        Z_PARAM_LONG(x1) Z_PARAM_LONG(y1) Z_PARAM_LONG(z1)
+        Z_PARAM_LONG(x2) Z_PARAM_LONG(y2) Z_PARAM_LONG(z2)
+        Z_PARAM_LONG(w)  Z_PARAM_LONG(h)
+    ZEND_PARSE_PARAMETERS_END();
+
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+
+    NavMeshObject *intern = navmesh_from_zval(ZEND_THIS);
+    RETURN_BOOL(intern->nav.isLineWalkable(
+        static_cast<int32_t>(x1), static_cast<int32_t>(y1), static_cast<int32_t>(z1),
+        static_cast<int32_t>(x2), static_cast<int32_t>(y2), static_cast<int32_t>(z2),
+        static_cast<int32_t>(w),  static_cast<int32_t>(h)
+    ));
+}
+
 PHP_METHOD(NavMesh, findPath) {
     zend_long  sx, sy, sz, ex, ey, ez;
     HashTable *opts = nullptr;
@@ -532,6 +563,7 @@ static const zend_function_entry navmesh_methods[] = {
     PHP_ME(NavMesh, unloadSubChunk,         arginfo_navmesh_subChunkCoord,      ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, unloadColumn,           arginfo_navmesh_unloadColumn,       ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, isLoaded,               arginfo_navmesh_subChunkCoord,      ZEND_ACC_PUBLIC)
+    PHP_ME(NavMesh, isLineWalkable,         arginfo_navmesh_isLineWalkable,     ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, clear,                  arginfo_navmesh_void,               ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, updateBlock,            arginfo_navmesh_updateBlock,        ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, findPath,               arginfo_navmesh_findPath,           ZEND_ACC_PUBLIC)

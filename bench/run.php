@@ -89,6 +89,66 @@ function buildOpenField(int $size = 64): array {
     $getWeight = static fn(int $x, int $z): int => 10;
 
     $userAStar = new UserStyleAStar($isWalkable, $getWeight);
+    // Force the user-style A* to search until completion instead of bailing out at the
+    // default `maxCost = 500` (which truncates the path on 50+-cell tests). Without this
+    // the comparison is "ext finds full path" vs "user finds partial path", which is a
+    // misleading speedup ratio.
+    $userAStar->setMaxCost(50_000);
+
+    return [$cpp, $php, $userAStar];
+}
+
+/**
+ * Open field with periodic 1-block walls perpendicular to the path. The mob has to
+ * jump over each wall, then walk, then jump again. Tests pathfinder behaviour under
+ * the vanilla MC model (maxStepUp=1, stepUpCost=1.0).
+ *
+ * UserStyleAStar can't navigate this — it's strictly 2-D and treats blocked cells
+ * as impassable. PhpNavMesh and ext-pathfinder both handle it natively.
+ */
+function buildJumpCourse(int $size = 64, int $wallEvery = 10): array {
+    $stone = str_repeat(pack('V', 1), 4096);
+
+    $cpp = new \pathfinder\NavMesh();
+    $cpp->setBlockProperty(0, true, false);
+    $cpp->setBlockProperty(1, false, true);
+    $cpp->setCacheSize(0);
+
+    $php = new PhpNavMesh();
+    $php->setBlockProperty(0, true, false);
+    $php->setBlockProperty(1, false, true);
+
+    $chunks = (int) ceil($size / 16);
+    for ($cx = 0; $cx < $chunks; $cx++) {
+        for ($cz = 0; $cz < $chunks; $cz++) {
+            $cpp->loadSubChunk($cx, 0, $cz, $stone);
+            $php->loadSubChunk($cx, 0, $cz, $stone);
+        }
+    }
+
+    // Walking floor at y=15.
+    for ($x = 0; $x < $size; $x++) {
+        for ($z = 0; $z < $size; $z++) {
+            $cpp->updateBlock($x, 15, $z, 0);
+            $php->updateBlock($x, 15, $z, 0);
+        }
+    }
+
+    // Periodic walls perpendicular to +X direction at y=15. Mob must jump over.
+    // (y=16+ is unloaded → defaults to passable, so jumping clears the obstacle.)
+    for ($wx = $wallEvery; $wx < $size - 5; $wx += $wallEvery) {
+        for ($z = 0; $z < $size; $z++) {
+            $cpp->updateBlock($wx, 15, $z, 1);
+            $php->updateBlock($wx, 15, $z, 1);
+        }
+    }
+
+    // The user-style A* is intentionally absent for this scenario — it's 2-D and
+    // can't represent jumping over a wall. We pass a no-op stub to keep the
+    // runScenario signature uniform; runScenario will detect the null path return.
+    $rejectAll = static fn(int $x, int $z): bool => false;
+    $userAStar = new UserStyleAStar($rejectAll, static fn(int $x, int $z): int => 10);
+    $userAStar->setMaxCost(50_000);
 
     return [$cpp, $php, $userAStar];
 }
@@ -123,6 +183,7 @@ function buildMaze(int $size = 64, int $wallSpacing = 8): array {
     };
     $getWeight = static fn(int $x, int $z): int => 10;
     $userAStar = new UserStyleAStar($isWalkable, $getWeight);
+    $userAStar->setMaxCost(50_000);
 
     return [$cpp, $php, $userAStar];
 }
@@ -271,6 +332,29 @@ runScenario(
     cppIter:  (int) (2000 * $multiplier),
     phpIter:  (int) (100  * $multiplier),
     userIter: (int) (100  * $multiplier),
+);
+
+[$cpp, $php, $userAStar] = buildJumpCourse(64, 10);
+
+// Vanilla MC config: 1-block jump only, no auto-step over full blocks.
+$jumpOpts = [
+    'entityHeight'    => 2,
+    'entityWidth'     => 1,
+    'maxStepUp'       => 1,
+    'maxFallDistance' => 3,
+    'stepUpCost'      => 1.0,
+    'fallCost'        => 0.3,
+    'useCache'        => false,
+];
+
+runScenario(
+    "Test 5 / Jump course 50-cell (1-block walls every 10)",
+    $cpp, $php, $userAStar,
+    [5, 15, 5, 55, 15, 5, $jumpOpts],
+    [new Vector3(5, 15, 5), new Vector3(55, 15, 5)],
+    cppIter:  (int) (2000 * $multiplier),
+    phpIter:  (int) (100  * $multiplier),
+    userIter: (int) (50   * $multiplier), // user A* will fail out — tiny budget
 );
 
 echo "Done.\n";
