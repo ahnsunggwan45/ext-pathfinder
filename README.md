@@ -119,8 +119,13 @@ foreach ($chunk->getSubChunks() as $cy => $subChunk) {
         $nav->loadAirSubChunk($cx, $cy, $cz);
         continue;
     }
-    $packed = pack_paletted_block_array($subChunk->getBlockLayers()[0]);
-    $nav->loadSubChunk($cx, $cy, $cz, $packed);
+    $arr = $subChunk->getBlockLayers()[0]; // PalettedBlockArray from chunkutils2
+    $nav->loadSubChunkFromWordArray(
+        $cx, $cy, $cz,
+        $arr->getWordArray(),
+        $arr->getPalette(),
+        $arr->getBitsPerBlock(),
+    );
 }
 
 // 3. Patch single-block changes.
@@ -162,26 +167,16 @@ foreach ($path as [$x, $y, $z]) {
 }
 ```
 
-## Packing PocketMine's PalettedBlockArray
+## Loading PocketMine sub-chunks
 
-The fastest path is a thin C/PHP helper that copies the resolved block-state-ids into a
-binary string. A reference PHP implementation:
+Two paths:
 
-```php
-function pack_paletted_block_array(\pocketmine\world\format\PalettedBlockArray $arr): string {
-    $out = '';
-    for ($i = 0; $i < 4096; $i++) {
-        $x = $i & 15;
-        $z = ($i >> 4) & 15;
-        $y = ($i >> 8) & 15;
-        $out .= pack('V', $arr->get($x, $y, $z));
-    }
-    return $out;
-}
-```
+1. **`loadSubChunkFromWordArray()`** (recommended) — pulls `getWordArray()` /
+   `getPalette()` / `getBitsPerBlock()` from chunkutils2's `PalettedBlockArray` and
+   decodes inside ext-pathfinder. Single PHP→C++ call, ~50 µs per sub-chunk.
 
-For real workloads, expose a native `getEntries()` from `chunkutils2` and write a single
-`pack('V*', ...)` call — same result with one fewer loop.
+2. **`loadSubChunk(packedBlockIds)`** — fallback that takes a 16384-byte raw uint32
+   array. Useful if you have block data from a non-chunkutils2 source.
 
 ## Configuration reference
 

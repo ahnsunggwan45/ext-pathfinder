@@ -50,10 +50,42 @@ final class NavMesh {
      * Load a 16×16×16 sub-chunk's block IDs as a packed binary string.
      *
      * `$packedBlockIds` MUST be exactly 16384 bytes (4096 × `uint32`) in
-     * `(y << 8) | (z << 4) | x` order — same as PocketMine's `PalettedBlockArray`
-     * internal layout.
+     * `(y << 8) | (z << 4) | x` order.
+     *
+     * For PocketMine you'll usually want {@see self::loadSubChunkFromWordArray()}
+     * instead — it skips the 4096-iteration `pack('V', ...)` loop.
      */
     public function loadSubChunk(int $cx, int $cy, int $cz, string $packedBlockIds): void {}
+
+    /**
+     * Load a sub-chunk directly from a chunkutils2 `PalettedBlockArray`'s internal
+     * components — no per-block PHP loop. Roughly **30× faster** than the
+     * `loadSubChunk(packedString)` path on subchunk-load events.
+     *
+     * Typical usage:
+     * ```
+     * $arr = $subChunk->getBlockLayers()[0]; // PalettedBlockArray from chunkutils2
+     * $nav->loadSubChunkFromWordArray(
+     *     $cx, $cy, $cz,
+     *     $arr->getWordArray(),
+     *     $arr->getPalette(),
+     *     $arr->getBitsPerBlock(),
+     * );
+     * ```
+     *
+     * @param string         $wordArray    Binary string from `PalettedBlockArray::getWordArray()`.
+     * @param array<int,int> $palette      Result of `PalettedBlockArray::getPalette()` — list of
+     *                                     unique block-state IDs in palette-index order.
+     * @param int            $bitsPerBlock Result of `PalettedBlockArray::getBitsPerBlock()`.
+     */
+    public function loadSubChunkFromWordArray(
+        int $cx,
+        int $cy,
+        int $cz,
+        string $wordArray,
+        array $palette,
+        int $bitsPerBlock,
+    ): void {}
 
     /** Load a fully-passable air sub-chunk. */
     public function loadAirSubChunk(int $cx, int $cy, int $cz): void {}

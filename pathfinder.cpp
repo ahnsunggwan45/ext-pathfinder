@@ -93,6 +93,15 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_navmesh_loadSubChunk, 0, 0, 4)
     ZEND_ARG_TYPE_INFO(0, packedBlockIds, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_navmesh_loadSubChunkFromWordArray, 0, 0, 6)
+    ZEND_ARG_TYPE_INFO(0, cx,            IS_LONG,   0)
+    ZEND_ARG_TYPE_INFO(0, cy,            IS_LONG,   0)
+    ZEND_ARG_TYPE_INFO(0, cz,            IS_LONG,   0)
+    ZEND_ARG_TYPE_INFO(0, wordArray,     IS_STRING, 0)
+    ZEND_ARG_TYPE_INFO(0, palette,       IS_ARRAY,  0)
+    ZEND_ARG_TYPE_INFO(0, bitsPerBlock,  IS_LONG,   0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_navmesh_subChunkCoord, 0, 0, 3)
     ZEND_ARG_TYPE_INFO(0, cx, IS_LONG, 0)
     ZEND_ARG_TYPE_INFO(0, cy, IS_LONG, 0)
@@ -210,6 +219,59 @@ PHP_METHOD(NavMesh, loadSubChunk) {
         static_cast<int32_t>(cy),
         static_cast<int32_t>(cz),
         reinterpret_cast<const uint32_t *>(ZSTR_VAL(packed)));
+}
+
+PHP_METHOD(NavMesh, loadSubChunkFromWordArray) {
+    zend_long    cx, cy, cz, bitsPerBlock;
+    zend_string *wordArray;
+    HashTable   *paletteHt;
+
+    ZEND_PARSE_PARAMETERS_START(6, 6)
+        Z_PARAM_LONG(cx)
+        Z_PARAM_LONG(cy)
+        Z_PARAM_LONG(cz)
+        Z_PARAM_STR(wordArray)
+        Z_PARAM_ARRAY_HT(paletteHt)
+        Z_PARAM_LONG(bitsPerBlock)
+    ZEND_PARSE_PARAMETERS_END();
+
+    // Flatten palette HashTable → vector<uint32_t> for O(1) C++ lookup.
+    // chunkutils2 returns getPalette() as a 0-indexed list, so we honour insertion order.
+    const size_t paletteSize = zend_hash_num_elements(paletteHt);
+    if (paletteSize == 0) {
+        zend_throw_error(nullptr, "loadSubChunkFromWordArray: palette must not be empty");
+        RETURN_THROWS();
+    }
+    if (paletteSize > 65536) {
+        zend_throw_error(nullptr, "loadSubChunkFromWordArray: palette too large (%zu entries)", paletteSize);
+        RETURN_THROWS();
+    }
+
+    std::vector<uint32_t> palette;
+    palette.reserve(paletteSize);
+    zval *entry;
+    ZEND_HASH_FOREACH_VAL(paletteHt, entry) {
+        palette.push_back(static_cast<uint32_t>(zval_get_long(entry)));
+    } ZEND_HASH_FOREACH_END();
+
+    NavMeshObject *intern = navmesh_from_zval(ZEND_THIS);
+
+    const char *err = nullptr;
+    const bool  ok  = intern->nav.loadSubChunkFromWordArray(
+        static_cast<int32_t>(cx),
+        static_cast<int32_t>(cy),
+        static_cast<int32_t>(cz),
+        reinterpret_cast<const uint8_t *>(ZSTR_VAL(wordArray)),
+        ZSTR_LEN(wordArray),
+        palette.data(),
+        palette.size(),
+        static_cast<int>(bitsPerBlock),
+        &err
+    );
+    if (!ok) {
+        zend_throw_error(nullptr, "loadSubChunkFromWordArray: %s", err ? err : "unknown error");
+        RETURN_THROWS();
+    }
 }
 
 PHP_METHOD(NavMesh, loadAirSubChunk) {
@@ -432,7 +494,8 @@ static const zend_function_entry navmesh_methods[] = {
     PHP_ME(NavMesh, setBlockProperty,       arginfo_navmesh_setBlockProperty,   ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, setBlockProperties,     arginfo_navmesh_setBlockProperties, ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, clearBlockTable,        arginfo_navmesh_void,               ZEND_ACC_PUBLIC)
-    PHP_ME(NavMesh, loadSubChunk,           arginfo_navmesh_loadSubChunk,       ZEND_ACC_PUBLIC)
+    PHP_ME(NavMesh, loadSubChunk,             arginfo_navmesh_loadSubChunk,             ZEND_ACC_PUBLIC)
+    PHP_ME(NavMesh, loadSubChunkFromWordArray, arginfo_navmesh_loadSubChunkFromWordArray, ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, loadAirSubChunk,        arginfo_navmesh_subChunkCoord,      ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, loadSolidSubChunk,      arginfo_navmesh_subChunkCoord,      ZEND_ACC_PUBLIC)
     PHP_ME(NavMesh, unloadSubChunk,         arginfo_navmesh_subChunkCoord,      ZEND_ACC_PUBLIC)

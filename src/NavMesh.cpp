@@ -24,6 +24,74 @@ void NavMesh::loadSubChunk(int32_t cx, int32_t cy, int32_t cz, const uint32_t *b
     ++generation_;
 }
 
+bool NavMesh::loadSubChunkFromWordArray(int32_t cx, int32_t cy, int32_t cz,
+                                        const uint8_t *wordArray, size_t wordArrayBytes,
+                                        const uint32_t *palette, size_t paletteSize,
+                                        int bitsPerBlock,
+                                        const char **errOut) noexcept
+{
+    auto sub = std::make_unique<SubChunk>();
+
+    // Translation between layouts:
+    //   chunkutils2 indexing:  cuIdx = (x << 8) | (z << 4) | y      (X-major, Y innermost)
+    //   our SubChunk indexing: ourIdx = (y << 8) | (z << 4) | x     (Y-major, X innermost)
+
+    if (bitsPerBlock == 0) {
+        // Uniform subchunk: every cell is palette[0].
+        if (paletteSize < 1) {
+            *errOut = "bitsPerBlock=0 requires palette to have at least one entry";
+            return false;
+        }
+        const BlockProperty p = blockTable_.get(palette[0]);
+        for (int idx = 0; idx < SubChunk::VOLUME; ++idx) {
+            sub->setIdx(idx, p.passable, p.solid);
+        }
+    } else if (bitsPerBlock < 1 || bitsPerBlock > 16) {
+        *errOut = "bitsPerBlock must be 0 or in [1, 16]";
+        return false;
+    } else {
+        const int blocksPerWord = 32 / bitsPerBlock;
+        // chunkutils2 BLOCKS_PER_WORD = floor(32 / bitsPerBlock) — leftover bits in each word are unused.
+        const size_t wordCount = static_cast<size_t>((SubChunk::VOLUME + blocksPerWord - 1) / blocksPerWord);
+        const size_t expectedBytes = wordCount * sizeof(uint32_t);
+        if (wordArrayBytes != expectedBytes) {
+            *errOut = "wordArray size does not match bitsPerBlock × volume";
+            return false;
+        }
+
+        const uint32_t mask = (bitsPerBlock < 32) ? ((1u << bitsPerBlock) - 1u) : 0xFFFFFFFFu;
+
+        // Read native little-endian uint32 words. On x86_64 the binary string from
+        // chunkutils2's getWordArray() already has this layout — direct cast is safe.
+        const uint32_t *words = reinterpret_cast<const uint32_t *>(wordArray);
+
+        for (int cuIdx = 0; cuIdx < SubChunk::VOLUME; ++cuIdx) {
+            const int wordIdx  = cuIdx / blocksPerWord;
+            const int shift    = (cuIdx % blocksPerWord) * bitsPerBlock;
+            const uint32_t pIx = (words[wordIdx] >> shift) & mask;
+
+            if (pIx >= paletteSize) {
+                *errOut = "palette index out of bounds";
+                return false;
+            }
+
+            // Convert chunkutils2 (x, z, y) ordering → our (y, z, x).
+            const int x = (cuIdx >> 8) & 15;
+            const int z = (cuIdx >> 4) & 15;
+            const int y = cuIdx & 15;
+            const int ourIdx = (y << 8) | (z << 4) | x;
+
+            const BlockProperty p = blockTable_.get(palette[pIx]);
+            sub->setIdx(ourIdx, p.passable, p.solid);
+        }
+    }
+
+    subChunks_[packSubChunk(cx, cy, cz)] = std::move(sub);
+    invalidateCache();
+    ++generation_;
+    return true;
+}
+
 void NavMesh::loadAirSubChunk(int32_t cx, int32_t cy, int32_t cz) {
     auto sub = std::make_unique<SubChunk>();
     sub->fillAir();

@@ -37,6 +37,25 @@ public:
     /// `blockIds` MUST point to 4096 consecutive uint32 values in `(y << 8) | (z << 4) | x` order.
     void loadSubChunk(int32_t cx, int32_t cy, int32_t cz, const uint32_t *blockIds);
 
+    /// Load a subchunk directly from chunkutils2's PalettedBlockArray representation
+    /// (word-array + palette + bitsPerBlock). Avoids the 4096 PHP→C++ method calls and
+    /// `pack('V', ...)` allocations of the `loadSubChunk(packedString)` path.
+    ///
+    /// chunkutils2's word array is:
+    ///   - native uint32 little-endian (matches x86_64 memory layout)
+    ///   - palette indices packed LSB-first within each 32-bit word
+    ///   - block ordering `(x << 8) | (z << 4) | y` (X-major, Y innermost)
+    ///
+    /// `bitsPerBlock == 0` is the uniform-subchunk shortcut: palette[0] fills everything.
+    ///
+    /// Throws via the caller's error path on malformed input — the binding layer is
+    /// expected to translate to a PHP exception.
+    bool loadSubChunkFromWordArray(int32_t cx, int32_t cy, int32_t cz,
+                                   const uint8_t *wordArray, size_t wordArrayBytes,
+                                   const uint32_t *palette, size_t paletteSize,
+                                   int bitsPerBlock,
+                                   const char **errOut) noexcept;
+
     /// Convenience: load a fully-passable air subchunk (skips the per-block decode).
     void loadAirSubChunk(int32_t cx, int32_t cy, int32_t cz);
 
