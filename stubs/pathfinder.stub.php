@@ -123,7 +123,8 @@ final class NavMesh {
      *     stepUpCost?:      float,  // default 0.5 per cell of vertical climb
      *     fallCost?:        float,  // default 0.4 per cell of vertical fall
      *     maxPathLength?:   int,    // default 0 (off) — abort if g-cost exceeds this
-     *     useCache?:        bool,   // default true
+     *     useCache?:        bool,   // default false (must be enabled with setCacheSize() first)
+     *     algorithm?:       string, // 'astar' (default) or 'jps' — 2.5D Jump Point Search
      * }|null $options
      * @return list<array{0: int, 1: int, 2: int}>|null List of `[x, y, z]` cells from start to goal,
      *                                                  or `null` if no path / endpoints invalid / cap hit.

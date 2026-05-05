@@ -1,10 +1,11 @@
 #ifndef PATHFINDER_PATHCACHE_H
 #define PATHFINDER_PATHCACHE_H
 
+#include "vendor/unordered_dense.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <list>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -128,9 +129,9 @@ private:
     }
 
     // List-based LRU: front = MRU, back = LRU.
-    std::list<LruNode>                                                   lru_;
-    std::unordered_map<PathKey, std::list<LruNode>::iterator, PathKeyHash> index_;
-    size_t                                                               maxSize_;
+    std::list<LruNode>                                                                     lru_;
+    ankerl::unordered_dense::map<PathKey, std::list<LruNode>::iterator, PathKeyHash>     index_;
+    size_t                                                                                 maxSize_;
 };
 
 } // namespace pathfinder

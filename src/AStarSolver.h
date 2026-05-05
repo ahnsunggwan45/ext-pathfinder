@@ -3,10 +3,10 @@
 
 #include "Coord.h"
 #include "NavMesh.h"
+#include "vendor/unordered_dense.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 namespace pathfinder {
@@ -107,10 +107,10 @@ private:
 
     // ----- State (reused across queries) ---------------------------------------------------
 
-    std::vector<Node>                                       nodes_;
-    QuaternaryHeap                                          open_;
-    std::unordered_map<uint64_t, uint32_t, PackedCoordHash> coordToNode_;
-    std::vector<uint32_t>                                   reconstructionBuf_;
+    std::vector<Node>                                                  nodes_;
+    QuaternaryHeap                                                     open_;
+    ankerl::unordered_dense::map<uint64_t, uint32_t, PackedCoordHash> coordToNode_;
+    std::vector<uint32_t>                                              reconstructionBuf_;
 
     int32_t lastIterations_   = 0;
     bool    lastReachedGoal_  = false;
@@ -118,23 +118,6 @@ private:
     // ----- Helpers --------------------------------------------------------------------------
 
     void resetState() noexcept;
-
-    /// Resolve the actual standing Y for a horizontal step from (x, y, z) toward (nx, nz),
-    /// considering the entity's `(width, height)` bounding box.
-    /// Tries y+stepUp first (highest possible step-up), walks down to y-maxFall.
-    /// Returns INT32_MIN if no valid landing within range.
-    [[gnu::always_inline]] static inline int32_t resolveStandY(
-        const NavMesh &mesh,
-        int32_t nx, int32_t baseY, int32_t nz,
-        int32_t width, int32_t height,
-        int32_t maxStepUp, int32_t maxFall) noexcept;
-
-    /// True iff the entity bounding box rooted at (x, y, z) fits — every covered cell is passable
-    /// and every (x..x+w-1, y-1, z..z+w-1) floor cell is solid.
-    [[gnu::always_inline]] static inline bool fitsAt(
-        const NavMesh &mesh,
-        int32_t x, int32_t y, int32_t z,
-        int32_t width, int32_t height) noexcept;
 
     /// Octile-distance heuristic for 3-D Minecraft pathing. Admissible & consistent given
     /// `cardinalCost == 1.0` and `diagonalCost == √2`. Vertical adds 1.0 per block (matches

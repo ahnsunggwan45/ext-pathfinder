@@ -135,25 +135,35 @@ function fmt(array $s): string {
 function runScenario(string $name, $cpp, $php, array $args, int $cppIter, int $phpIter): void {
     echo "── $name\n";
 
-    // Sanity check: both impls should produce paths of the same length.
-    $cppPath = $cpp->findPath(...$args);
-    $phpPath = $php->findPath(...$args);
-    $cppLen  = $cppPath !== null ? count($cppPath) : -1;
-    $phpLen  = $phpPath !== null ? count($phpPath) : -1;
+    // Build per-algorithm option arrays.
+    $argsA = $args;
+    $argsJ = $args;
+    $argsA[6] = ($args[6] ?? []) + ['algorithm' => 'astar'];
+    $argsJ[6] = ($args[6] ?? []) + ['algorithm' => 'jps'];
 
-    echo "  path length    : ext={$cppLen}, php={$phpLen}";
-    if ($cppLen !== $phpLen) echo "  ⚠ length mismatch";
-    echo "\n";
+    // Sanity: all three should produce paths (length may differ slightly between A*/JPS).
+    $aPath = $cpp->findPath(...$argsA);
+    $jPath = $cpp->findPath(...$argsJ);
+    $pPath = $php->findPath(...$args);
+    $aLen  = $aPath !== null ? count($aPath) : -1;
+    $jLen  = $jPath !== null ? count($jPath) : -1;
+    $pLen  = $pPath !== null ? count($pPath) : -1;
 
-    $cppStats = benchBatched(fn() => $cpp->findPath(...$args), $cppIter);
-    $phpStats = benchBatched(fn() => $php->findPath(...$args), $phpIter, batchSize: 10);
+    echo "  path length    : a*={$aLen}, jps={$jLen}(jump-points), php={$pLen}\n";
 
-    $speedupMean   = $phpStats['mean']   / max($cppStats['mean'],   1e-9);
-    $speedupMedian = $phpStats['median'] / max($cppStats['median'], 1e-9);
+    $aStats = benchBatched(fn() => $cpp->findPath(...$argsA), $cppIter);
+    $jStats = benchBatched(fn() => $cpp->findPath(...$argsJ), $cppIter);
+    $pStats = benchBatched(fn() => $php->findPath(...$args),  $phpIter, batchSize: 10);
 
-    echo "  PHP-native     : " . fmt($phpStats) . "\n";
-    echo "  ext-pathfinder : " . fmt($cppStats) . "\n";
-    printf("  speedup        : %.1f× mean   %.1f× median\n\n", $speedupMean, $speedupMedian);
+    $vsAStar = $pStats['mean'] / max($aStats['mean'], 1e-9);
+    $vsJps   = $pStats['mean'] / max($jStats['mean'], 1e-9);
+    $aVsJ    = $aStats['mean'] / max($jStats['mean'], 1e-9);
+
+    echo "  PHP-native     : " . fmt($pStats) . "\n";
+    echo "  ext A*         : " . fmt($aStats) . "\n";
+    echo "  ext JPS        : " . fmt($jStats) . "\n";
+    printf("  speedup        : %.1f× (php→A*),  %.1f× (php→JPS),  %.2f× (A*→JPS)\n\n",
+           $vsAStar, $vsJps, $aVsJ);
 }
 
 // ============================================================================

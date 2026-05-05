@@ -9,6 +9,6 @@ if (PHP_PATHFINDER != "no") {
 
     EXTENSION("pathfinder", "pathfinder.cpp", null, "/I" + configure_module_dirname);
     ADD_SOURCES(configure_module_dirname + "/src",
-        "NavMesh.cpp AStarSolver.cpp",
+        "NavMesh.cpp AStarSolver.cpp JpsSolver.cpp",
         "pathfinder");
 }

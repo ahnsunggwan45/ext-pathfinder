@@ -73,45 +73,6 @@ inline float AStarSolver::heuristic(int32_t dx, int32_t dy, int32_t dz) noexcept
          + static_cast<float>(ady) * 0.0f; // Y is ignored; admissibility-safe since stepUpCost can be small.
 }
 
-inline bool AStarSolver::fitsAt(
-    const NavMesh &mesh,
-    int32_t x, int32_t y, int32_t z,
-    int32_t width, int32_t height) noexcept
-{
-    // Floor: every cell directly under the bounding box must be solid.
-    for (int32_t dz = 0; dz < width; ++dz) {
-        for (int32_t dx = 0; dx < width; ++dx) {
-            if (!mesh.isSolid(x + dx, y - 1, z + dz)) return false;
-        }
-    }
-    // Body: every cell inside the bounding box must be passable.
-    // Order: y-outer, then z, then x — matches NavMesh subchunk Y-major layout
-    // and gives the per-subchunk cache the longest dwell time.
-    for (int32_t dy = 0; dy < height; ++dy) {
-        for (int32_t dz = 0; dz < width; ++dz) {
-            for (int32_t dx = 0; dx < width; ++dx) {
-                if (!mesh.isPassable(x + dx, y + dy, z + dz)) return false;
-            }
-        }
-    }
-    return true;
-}
-
-inline int32_t AStarSolver::resolveStandY(
-    const NavMesh &mesh,
-    int32_t nx, int32_t baseY, int32_t nz,
-    int32_t width, int32_t height,
-    int32_t maxStepUp, int32_t maxFall) noexcept
-{
-    // Try highest first — gravity-resolves: the entity prefers to step up rather than fall.
-    for (int32_t dy = maxStepUp; dy >= -maxFall; --dy) {
-        if (fitsAt(mesh, nx, baseY + dy, nz, width, height)) {
-            return baseY + dy;
-        }
-    }
-    return INT32_MIN;
-}
-
 // ============================================================================
 // AStarSolver — main loop.
 // ============================================================================
@@ -147,8 +108,8 @@ bool AStarSolver::findPath(const NavMesh &mesh,
     const int32_t maxFall   = std::max(0, cfg.maxFallDistance);
 
     // Endpoints must fit at the requested coordinates. Snapping/relaxation is the caller's job.
-    if (!fitsAt(mesh, sx, sy, sz, w, h)) return false;
-    if (!fitsAt(mesh, ex, ey, ez, w, h)) return false;
+    if (!mesh.fitsBox( sx, sy, sz, w, h)) return false;
+    if (!mesh.fitsBox( ex, ey, ez, w, h)) return false;
 
     // Trivial case: same cell.
     if (sx == ex && sy == ey && sz == ez) {
@@ -225,15 +186,15 @@ bool AStarSolver::findPath(const NavMesh &mesh,
             const int32_t nz = curZ + dz;
 
             // Resolve landing Y considering step-up/fall and entity size.
-            const int32_t ny = resolveStandY(mesh, nx, curY, nz, w, h, maxStepUp, maxFall);
+            const int32_t ny = mesh.resolveStandY(nx, curY, nz, w, h, maxStepUp, maxFall);
             if (ny == INT32_MIN) continue;
 
             // Diagonal corner-cut prevention: at least one of the two intermediate axis-aligned
             // cells (at the entity's current Y) must accommodate the bounding box.
             // This keeps wider entities (width > 1) from squeezing through corners.
             if (d >= 4) {
-                if (!fitsAt(mesh, curX + dx, curY, curZ, w, h) &&
-                    !fitsAt(mesh, curX, curY, curZ + dz, w, h)) {
+                if (!mesh.fitsBox( curX + dx, curY, curZ, w, h) &&
+                    !mesh.fitsBox( curX, curY, curZ + dz, w, h)) {
                     continue;
                 }
             }

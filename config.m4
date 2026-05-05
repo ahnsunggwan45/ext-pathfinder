@@ -26,7 +26,8 @@ if test "$PHP_PATHFINDER" != "no"; then
   PHP_NEW_EXTENSION(pathfinder,
     pathfinder.cpp \
     src/NavMesh.cpp \
-    src/AStarSolver.cpp,
+    src/AStarSolver.cpp \
+    src/JpsSolver.cpp,
     $ext_shared,,
     -std=c++17 -O3 -fno-strict-aliasing -DNDEBUG)
 

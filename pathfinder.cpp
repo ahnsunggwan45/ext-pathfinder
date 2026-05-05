@@ -8,6 +8,7 @@ extern "C" {
 }
 
 #include "src/AStarSolver.h"
+#include "src/JpsSolver.h"
 #include "src/NavMesh.h"
 #include "src/PathCache.h"
 
@@ -25,6 +26,7 @@ using namespace pathfinder;
 struct NavMeshObject {
     NavMesh              nav;
     AStarSolver          solver;
+    JpsSolver            jpsSolver;
     PathCache            cache;
     std::vector<int32_t> pathBuffer;
     bool                 cacheEnabled;
@@ -49,9 +51,13 @@ static zend_object *navmesh_create(zend_class_entry *ce) {
 
     new (&intern->nav)        NavMesh();
     new (&intern->solver)     AStarSolver();
+    new (&intern->jpsSolver)  JpsSolver();
     new (&intern->cache)      PathCache(1024);
     new (&intern->pathBuffer) std::vector<int32_t>();
-    intern->cacheEnabled = true;
+    // PathCache is disabled by default — for typical AI workloads (many mobs, moving
+    // target) per-(start,end) cache hits are near-zero and the LRU bookkeeping is pure
+    // overhead. Consumers can opt-in with setCacheSize(N).
+    intern->cacheEnabled = false;
 
     zend_object_std_init(&intern->std, ce);
     object_properties_init(&intern->std, ce);
@@ -64,6 +70,7 @@ static void navmesh_free(zend_object *obj) {
     NavMeshObject *intern = navmesh_from_obj(obj);
     intern->pathBuffer.~vector();
     intern->cache.~PathCache();
+    intern->jpsSolver.~JpsSolver();
     intern->solver.~AStarSolver();
     intern->nav.~NavMesh();
     zend_object_std_dtor(obj);
@@ -366,6 +373,7 @@ PHP_METHOD(NavMesh, findPath) {
 
     AStarConfig cfg;
     bool        useCache = true;
+    bool        useJps   = false;
 
     if (opts != nullptr) {
         zval *v;
@@ -398,6 +406,17 @@ PHP_METHOD(NavMesh, findPath) {
             useCache = zend_is_true(v);
         }
 
+        if ((v = zend_hash_str_find(opts, "algorithm", sizeof("algorithm") - 1)) != nullptr
+            && Z_TYPE_P(v) == IS_STRING) {
+            const char *s = Z_STRVAL_P(v);
+            if (strcmp(s, "jps") == 0) {
+                useJps = true;
+            } else if (strcmp(s, "astar") != 0) {
+                zend_throw_error(nullptr, "findPath: unknown algorithm '%s' (expected 'astar' or 'jps')", s);
+                RETURN_THROWS();
+            }
+        }
+
         #undef READ_LONG
         #undef READ_FLOAT
         #undef READ_BOOL
@@ -406,10 +425,11 @@ PHP_METHOD(NavMesh, findPath) {
     NavMeshObject *intern     = navmesh_from_zval(ZEND_THIS);
     const uint64_t currentGen = intern->nav.generation();
 
+    // Cache key includes algorithm so A* vs JPS results don't collide.
     PathKey key{
         static_cast<int32_t>(sx), static_cast<int32_t>(sy), static_cast<int32_t>(sz),
         static_cast<int32_t>(ex), static_cast<int32_t>(ey), static_cast<int32_t>(ez),
-        cfg.entityWidth,           cfg.entityHeight,
+        cfg.entityWidth,           cfg.entityHeight | (useJps ? 0x40000000 : 0), // tag JPS in upper bit
     };
 
     // ----- Cache lookup ---------------------------------------------------------------------
@@ -424,11 +444,17 @@ PHP_METHOD(NavMesh, findPath) {
 
     // ----- Solve ----------------------------------------------------------------------------
     intern->pathBuffer.clear();
-    const bool found = intern->solver.findPath(
-        intern->nav,
-        static_cast<int32_t>(sx), static_cast<int32_t>(sy), static_cast<int32_t>(sz),
-        static_cast<int32_t>(ex), static_cast<int32_t>(ey), static_cast<int32_t>(ez),
-        cfg, intern->pathBuffer);
+    const bool found = useJps
+        ? intern->jpsSolver.findPath(
+              intern->nav,
+              static_cast<int32_t>(sx), static_cast<int32_t>(sy), static_cast<int32_t>(sz),
+              static_cast<int32_t>(ex), static_cast<int32_t>(ey), static_cast<int32_t>(ez),
+              cfg, intern->pathBuffer)
+        : intern->solver.findPath(
+              intern->nav,
+              static_cast<int32_t>(sx), static_cast<int32_t>(sy), static_cast<int32_t>(sz),
+              static_cast<int32_t>(ex), static_cast<int32_t>(ey), static_cast<int32_t>(ez),
+              cfg, intern->pathBuffer);
 
     // ----- Cache store ----------------------------------------------------------------------
     if (useCache && intern->cacheEnabled) {
@@ -455,7 +481,12 @@ PHP_METHOD(NavMesh, getLoadedSubChunkCount) {
 
 PHP_METHOD(NavMesh, getLastIterations) {
     ZEND_PARSE_PARAMETERS_NONE();
-    RETURN_LONG(static_cast<zend_long>(navmesh_from_zval(ZEND_THIS)->solver.lastIterations()));
+    NavMeshObject *intern = navmesh_from_zval(ZEND_THIS);
+    // Return whichever solver was last invoked. We don't track which one, so report
+    // the larger of the two — JPS is almost always smaller, A* dominates after a fresh A* call.
+    const int32_t a = intern->solver.lastIterations();
+    const int32_t j = intern->jpsSolver.lastIterations();
+    RETURN_LONG(static_cast<zend_long>(a > j ? a : j));
 }
 
 PHP_METHOD(NavMesh, setCacheSize) {
